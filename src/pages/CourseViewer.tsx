@@ -55,7 +55,7 @@ export default function CourseViewer() {
 
     // Fetch creator profile for watermark
     const { data: creatorProfile } = await supabase
-      .from("profiles")
+      .from("public_profiles")
       .select("name, show_watermark")
       .eq("id", courseData.creator_id)
       .single();
@@ -293,7 +293,7 @@ export default function CourseViewer() {
               <CardContent>
                 <div className="relative overflow-hidden">
                   {renderContent()}
-                  {creatorName && (
+                  {showWatermark && creatorName && (
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none z-10">
                       <p className="text-6xl md:text-8xl font-bold text-gray-400/40 rotate-[-30deg] whitespace-nowrap">
                         {creatorName}
