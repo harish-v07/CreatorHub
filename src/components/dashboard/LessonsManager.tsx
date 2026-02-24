@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Plus, Trash2, ArrowLeft, Upload, FileText } from "lucide-react";
+import { uploadToS3 } from "@/lib/s3-upload";
 
 export default function LessonsManager() {
   const { courseId } = useParams();
@@ -69,24 +70,12 @@ export default function LessonsManager() {
     setUploading(true);
 
     try {
-      const fileExt = formData.file.name.split('.').pop();
-      const fileName = `${Math.random().toString(36).substring(2)}.${fileExt}`;
-      const filePath = `${courseId}/${fileName}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('course-content')
-        .upload(filePath, formData.file);
-
-      if (uploadError) throw uploadError;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('course-content')
-        .getPublicUrl(filePath);
+      const { url } = await uploadToS3(formData.file, `lessons/${courseId}`);
 
       const { error: insertError } = await supabase.from("lessons").insert({
         course_id: courseId,
         title: formData.title,
-        content_url: filePath,
+        content_url: url,
         order_index: lessons.length,
       });
 
@@ -216,9 +205,9 @@ export default function LessonsManager() {
                       {lesson.content_url?.split('.').pop()?.toUpperCase()} File
                     </CardDescription>
                   </div>
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     onClick={() => handleDelete(lesson.id, lesson.content_url)}
                   >
                     <Trash2 className="h-4 w-4 text-destructive" />

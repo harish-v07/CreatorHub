@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
+import { getS3ViewUrl } from "@/lib/s3-upload";
 import { toast } from "sonner";
 import { ArrowLeft, PlayCircle, FileText, Lock, CheckCircle2 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
@@ -114,12 +115,26 @@ export default function CourseViewer() {
 
   const loadLessonContent = async () => {
     if (!currentLesson?.content_url) return;
+    setContentUrl(""); // Reset while loading
 
-    const { data } = supabase.storage
-      .from('course-content')
-      .getPublicUrl(currentLesson.content_url);
-
-    setContentUrl(data.publicUrl);
+    // Check if it's an absolute URL (like AWS S3) or a relative path (Supabase)
+    if (currentLesson.content_url.startsWith('http')) {
+      try {
+        console.log("Fetching signed URL for:", currentLesson.content_url);
+        const signedUrl = await getS3ViewUrl(currentLesson.content_url);
+        console.log("Got signed URL:", signedUrl?.substring(0, 80) + "...");
+        setContentUrl(signedUrl);
+      } catch (error) {
+        console.error("Error fetching S3 signed URL:", error);
+        toast.error("Failed to load content. Please check your connection and try again.");
+        // Do NOT fall back to raw URL — it's private and will just show AccessDenied
+      }
+    } else {
+      const { data } = supabase.storage
+        .from('course-content')
+        .getPublicUrl(currentLesson.content_url);
+      setContentUrl(data.publicUrl);
+    }
   };
 
   const handleEnrollFree = async () => {
@@ -186,21 +201,12 @@ export default function CourseViewer() {
 
     if (fileExt === 'pdf') {
       return (
-        <div className="w-full rounded-lg border bg-muted">
-          <object
-            data={contentUrl}
-            type="application/pdf"
+        <div className="w-full rounded-lg overflow-hidden border bg-muted">
+          <iframe
+            src={contentUrl}
             className="w-full h-[700px]"
-          >
-            <div className="flex flex-col items-center justify-center h-[700px] p-8">
-              <FileText className="h-16 w-16 text-muted-foreground mb-4" />
-              <p className="text-lg font-medium mb-2">PDF Document</p>
-              <p className="text-muted-foreground mb-4">{currentLesson.title}</p>
-              <a href={contentUrl} target="_blank" rel="noopener noreferrer">
-                <Button>Open PDF in New Tab</Button>
-              </a>
-            </div>
-          </object>
+            title={currentLesson.title}
+          />
         </div>
       );
     }

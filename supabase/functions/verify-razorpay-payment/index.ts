@@ -24,21 +24,53 @@ serve(async (req) => {
         const generated_signature = hmac.digest('hex');
 
         if (generated_signature === razorpay_signature) {
-            return new Response(
-                JSON.stringify({ success: true, message: "Payment verified successfully" }),
+            JSON.stringify({ success: true, message: "Payment verified successfully" }),
                 { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
             );
-        } else {
-            throw new Error("Invalid signature");
-        }
-    } catch (error) {
-        console.error('Error verifying payment:', error);
-        return new Response(
-            JSON.stringify({ error: error.message, success: false }),
-            {
-                status: 400,
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-            }
-        );
+
+// ─────────────────────────────────────────────────────────────
+// Update transfer status in Supabase
+// ─────────────────────────────────────────────────────────────
+try {
+    // Initialize Supabase client
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.39.3");
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    const { error: updateError } = await supabase
+        .from('payment_transfers')
+        .update({
+            status: 'completed',
+            razorpay_payment_id: razorpay_payment_id,
+            completed_at: new Date().toISOString()
+        })
+        .eq('razorpay_order_id', razorpay_order_id);
+
+    if (updateError) {
+        console.error('Failed to update payment transfer status:', updateError);
+    } else {
+        console.log('Payment transfer marked as completed for order:', razorpay_order_id);
     }
+} catch (err) {
+    console.error('Error updating transfer status:', err);
+}
+
+return new Response(
+    JSON.stringify({ success: true, message: "Payment verified successfully" }),
+    { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+);
+        } else {
+    throw new Error("Invalid signature");
+}
+    } catch (error) {
+    console.error('Error verifying payment:', error);
+    return new Response(
+        JSON.stringify({ error: error.message, success: false }),
+        {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+    );
+}
 });

@@ -222,6 +222,44 @@ serve(async (req) => {
     }
 
     console.log('Order created successfully:', orderData.id);
+
+    // ─────────────────────────────────────────────────────────────
+    // Record the transfer in Supabase if one was created
+    // ─────────────────────────────────────────────────────────────
+    if (creatorAccountId && creatorAccountId.startsWith('acc_') && options.transfers && options.transfers.length > 0) {
+      try {
+        const transferData = {
+          order_id: null, // We don't have an internal order_id yet, will be linked via razorpay_order_id
+          creator_id: course_id ? (await supabase.from('courses').select('creator_id').eq('id', course_id).single()).data?.creator_id
+            : (await supabase.from('products').select('creator_id').eq('id', product_id).single()).data?.creator_id,
+          learner_id: (await supabase.auth.getUser()).data.user?.id, // Might be null if guest checkout
+          item_id: course_id || product_id,
+          item_type: course_id ? 'course' : 'product',
+          total_amount: amount,
+          creator_amount: options.transfers[0].amount / 100, // Convert back to main currency unit
+          platform_fee: amount - (options.transfers[0].amount / 100),
+          razorpay_order_id: orderData.id,
+          status: 'pending',
+          created_at: new Date().toISOString(),
+        };
+
+        console.log('Recording payment transfer:', transferData);
+
+        const { error: transferError } = await supabase
+          .from('payment_transfers')
+          .insert(transferData);
+
+        if (transferError) {
+          console.error('Failed to record payment transfer:', transferError);
+          // Non-fatal, order is already created in Razorpay
+        } else {
+          console.log('Payment transfer recorded successfully');
+        }
+      } catch (err) {
+        console.error('Error recording transfer:', err);
+      }
+    }
+
     return new Response(
       JSON.stringify(orderData),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { ExternalLink } from "lucide-react";
 import { useCart } from "@/hooks/useCart";
+import { S3Media } from "@/components/S3Media";
 
 export default function CreatorStorefront() {
   const { creatorId } = useParams();
@@ -393,11 +394,7 @@ export default function CreatorStorefront() {
                     >
                       {product.media_urls && product.media_urls.length > 0 && (
                         <div className="aspect-square w-full overflow-hidden rounded-t-lg">
-                          {product.media_urls[0].includes('.mp4') || product.media_urls[0].includes('.webm') ? (
-                            <video src={product.media_urls[0]} className="w-full h-full object-cover" />
-                          ) : (
-                            <img src={product.media_urls[0]} alt={product.name} className="w-full h-full object-cover" />
-                          )}
+                          <S3Media src={product.media_urls[0]} alt={product.name} className="w-full h-full object-cover" controls={false} />
                         </div>
                       )}
                       <CardHeader>

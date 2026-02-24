@@ -10,6 +10,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Plus, Edit, Trash2, Upload, X } from "lucide-react";
 import { productSchema } from "@/lib/validation";
+import { uploadToS3 } from "@/lib/s3-upload";
+import { S3Media } from "@/components/S3Media";
 
 export default function ProductsManager({ onProductChange }: { onProductChange?: () => void }) {
   const [products, setProducts] = useState<any[]>([]);
@@ -98,26 +100,13 @@ export default function ProductsManager({ onProductChange }: { onProductChange?:
 
     try {
       const uploadPromises = mediaFiles.map(async (file) => {
-        const fileExt = file.name.split('.').pop();
-        const fileName = `${Math.random().toString(36).substring(2)}.${fileExt}`;
-        const filePath = `products/${fileName}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from('course-content')
-          .upload(filePath, file);
-
-        if (uploadError) throw uploadError;
-
-        const { data: { publicUrl } } = supabase.storage
-          .from('course-content')
-          .getPublicUrl(filePath);
-
-        return publicUrl;
+        const { url } = await uploadToS3(file, "products");
+        return url;
       });
 
       return await Promise.all(uploadPromises);
     } catch (error) {
-      console.error('Error uploading media:', error);
+      console.error("Error uploading media:", error);
       throw error;
     }
   };
@@ -329,11 +318,7 @@ export default function ProductsManager({ onProductChange }: { onProductChange?:
                       <div className="grid grid-cols-2 gap-4">
                         {existingMediaUrls.map((url, index) => (
                           <div key={`existing-${index}`} className="relative">
-                            {url.includes('.mp4') || url.includes('.webm') ? (
-                              <video src={url} className="w-full h-32 object-cover rounded" controls />
-                            ) : (
-                              <img src={url} alt={`Existing ${index + 1}`} className="w-full h-32 object-cover rounded" />
-                            )}
+                            <S3Media src={url} className="w-full h-32 object-cover rounded" />
                             <Button
                               type="button"
                               variant="destructive"
@@ -437,11 +422,7 @@ export default function ProductsManager({ onProductChange }: { onProductChange?:
             <Card key={product.id} className="shadow-soft hover:shadow-hover transition-all">
               {product.media_urls && product.media_urls.length > 0 && (
                 <div className="aspect-video w-full overflow-hidden rounded-t-lg">
-                  {product.media_urls[0].includes('.mp4') || product.media_urls[0].includes('.webm') ? (
-                    <video src={product.media_urls[0]} className="w-full h-full object-cover" />
-                  ) : (
-                    <img src={product.media_urls[0]} alt={product.name} className="w-full h-full object-cover" />
-                  )}
+                  <S3Media src={product.media_urls[0]} alt={product.name} className="w-full h-full object-cover" controls={false} />
                 </div>
               )}
               <CardHeader>
