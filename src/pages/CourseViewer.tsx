@@ -1,11 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { getS3ViewUrl } from "@/lib/s3-upload";
 import { toast } from "sonner";
-import { ArrowLeft, PlayCircle, FileText, Lock, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, PlayCircle, FileText, Lock, CheckCircle2, Maximize2, Minimize2 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { CourseComments } from "@/components/course/CourseComments";
 
@@ -22,6 +22,8 @@ export default function CourseViewer() {
   const [enrollmentId, setEnrollmentId] = useState<string | null>(null);
   const [creatorName, setCreatorName] = useState<string>("");
   const [showWatermark, setShowWatermark] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const contentWrapperRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     checkEnrollmentAndFetchCourse();
@@ -32,6 +34,22 @@ export default function CourseViewer() {
       loadLessonContent();
     }
   }, [currentLesson]);
+
+  // Track fullscreen state for wrapper-level fullscreen
+  useEffect(() => {
+    const handleFsChange = () =>
+      setIsFullscreen(document.fullscreenElement === contentWrapperRef.current);
+    document.addEventListener("fullscreenchange", handleFsChange);
+    return () => document.removeEventListener("fullscreenchange", handleFsChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      contentWrapperRef.current?.requestFullscreen();
+    } else {
+      document.exitFullscreen();
+    }
+  };
 
   const checkEnrollmentAndFetchCourse = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -192,7 +210,13 @@ export default function CourseViewer() {
 
     if (['mp4', 'webm', 'ogg'].includes(fileExt)) {
       return (
-        <video controls controlsList="nodownload" className="w-full rounded-lg" key={contentUrl}>
+        <video
+          controls
+          controlsList="nodownload nofullscreen"
+          className="w-full rounded-lg"
+          style={isFullscreen ? { width: '100%', height: '100%', objectFit: 'contain' } : {}}
+          key={contentUrl}
+        >
           <source src={contentUrl} type={`video/${fileExt}`} />
           Your browser does not support video playback.
         </video>
@@ -203,7 +227,7 @@ export default function CourseViewer() {
       return (
         <div className="w-full rounded-lg overflow-hidden border bg-muted">
           <iframe
-            src={contentUrl}
+            src={`${contentUrl}#toolbar=0&navpanes=0`}
             className="w-full h-[700px]"
             title={currentLesson.title}
           />
@@ -297,7 +321,11 @@ export default function CourseViewer() {
                 <CardDescription>{course?.category}</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="relative overflow-hidden">
+                <div
+                  ref={contentWrapperRef}
+                  className="relative overflow-hidden rounded-lg"
+                  style={isFullscreen ? { background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%' } : {}}
+                >
                   {renderContent()}
                   {showWatermark && creatorName && (
                     <div className="absolute bottom-3 right-3 pointer-events-none select-none z-10">
@@ -313,7 +341,7 @@ export default function CourseViewer() {
                           padding: "3px 9px",
                           borderRadius: "4px",
                           whiteSpace: "nowrap",
-                          textTransform: "uppercase",
+                          textTransform: "uppercase" as const,
                           lineHeight: 1.4,
                           border: "1px solid rgba(255,255,255,0.08)",
                         }}
@@ -322,6 +350,14 @@ export default function CourseViewer() {
                       </span>
                     </div>
                   )}
+                  {/* Custom fullscreen toggle — keeps watermark visible in fullscreen */}
+                  <button
+                    onClick={toggleFullscreen}
+                    className="absolute top-3 right-3 z-10 p-2 rounded text-white/70 hover:text-white hover:bg-black/50 transition-all"
+                    title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+                  >
+                    {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+                  </button>
                 </div>
                 <div className="mt-4 flex justify-end">
                   <Button

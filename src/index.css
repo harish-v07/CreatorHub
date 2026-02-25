@@ -172,3 +172,11 @@ All colors MUST be HSL.
     }
   }
 }
+
+/* Hide native video fullscreen button — we use our own custom button */
+video::-webkit-media-controls-fullscreen-button {
+  display: none !important;
+}
+video::-moz-full-screen-button {
+  display: none !important;
+}
