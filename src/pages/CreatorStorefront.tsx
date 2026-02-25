@@ -263,24 +263,27 @@ export default function CreatorStorefront() {
 
       <div className="pt-20">
         {/* Banner */}
-        <div
-          className="h-64 bg-gradient-to-r from-primary/20 to-secondary/20"
-          style={{
-            backgroundImage: creator.banner_url ? `url(${creator.banner_url})` : undefined,
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-          }}
-        />
+        <div className="relative h-64 bg-gradient-to-r from-primary/20 to-secondary/20 overflow-hidden">
+          {creator.banner_url && (
+            <S3Media
+              src={creator.banner_url}
+              alt="Storefront Banner"
+              className="absolute inset-0 w-full h-full object-cover"
+            />
+          )}
+        </div>
 
         <div className="container mx-auto px-4 -mt-20 relative z-10">
           <div className="bg-background rounded-xl shadow-soft p-8 mb-8">
             <div className="flex flex-col md:flex-row gap-6 items-start">
               {creator.avatar_url ? (
-                <img
-                  src={creator.avatar_url}
-                  alt={creator.name}
-                  className="w-32 h-32 rounded-full border-4 border-background shadow-lg"
-                />
+                <div className="w-32 h-32 rounded-full border-4 border-background shadow-lg overflow-hidden bg-background">
+                  <S3Media
+                    src={creator.avatar_url}
+                    alt={creator.name}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
               ) : (
                 <div className="w-32 h-32 rounded-full border-4 border-background shadow-lg bg-primary/10 flex items-center justify-center text-4xl font-bold text-primary">
                   {creator.name?.charAt(0)}

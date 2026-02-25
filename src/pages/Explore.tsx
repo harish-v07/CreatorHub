@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { Search } from "lucide-react";
+import { S3Media } from "@/components/S3Media";
 
 export default function Explore() {
   const [creators, setCreators] = useState<any[]>([]);
@@ -80,21 +81,24 @@ export default function Explore() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
               {filteredCreators.map((creator) => (
                 <Card key={creator.id} className="overflow-hidden shadow-soft hover:shadow-hover transition-all hover:scale-105">
-                  <div
-                    className="h-32 bg-gradient-to-r from-primary/20 to-secondary/20"
-                    style={{
-                      backgroundImage: creator.banner_url ? `url(${creator.banner_url})` : undefined,
-                      backgroundSize: "cover",
-                      backgroundPosition: "center",
-                    }}
-                  />
+                  <div className="relative h-32 bg-gradient-to-r from-primary/20 to-secondary/20 overflow-hidden">
+                    {creator.banner_url && (
+                      <S3Media
+                        src={creator.banner_url}
+                        alt="Creator Banner"
+                        className="absolute inset-0 w-full h-full object-cover"
+                      />
+                    )}
+                  </div>
                   <CardHeader className="relative">
                     {creator.avatar_url ? (
-                      <img
-                        src={creator.avatar_url}
-                        alt={creator.name}
-                        className="w-20 h-20 rounded-full border-4 border-background absolute -top-10 left-6 shadow-lg"
-                      />
+                      <div className="w-20 h-20 rounded-full border-4 border-background absolute -top-10 left-6 shadow-lg overflow-hidden bg-background">
+                        <S3Media
+                          src={creator.avatar_url}
+                          alt={creator.name}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
                     ) : (
                       <div className="w-20 h-20 rounded-full border-4 border-background absolute -top-10 left-6 shadow-lg bg-primary/10 flex items-center justify-center text-2xl font-bold text-primary">
                         {creator.name?.charAt(0)}
