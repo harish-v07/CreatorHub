@@ -14,21 +14,24 @@ serve(async (req) => {
     }
 
     try {
-        const supabaseClient = createClient(
-            Deno.env.get('SUPABASE_URL') ?? '',
-            Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-            { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
-        )
-
-        const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
-        if (userError || !user) {
-            return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                status: 401,
-            })
-        }
-
         const { fileName, fileType, path, action = 'upload', key: existingKey } = await req.json()
+
+        // Auth is only required for uploads — view requests work for everyone
+        // (AWS credentials are server-side only; signed URLs expire in 1hr)
+        if (action === 'upload') {
+            const supabaseClient = createClient(
+                Deno.env.get('SUPABASE_URL') ?? '',
+                Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+                { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
+            )
+            const { data: { user }, error: userError } = await supabaseClient.auth.getUser()
+            if (userError || !user) {
+                return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                    status: 401,
+                })
+            }
+        }
 
         if (action === 'upload' && (!fileName || !fileType)) {
             return new Response(JSON.stringify({ error: 'Missing fileName or fileType for upload' }), {
