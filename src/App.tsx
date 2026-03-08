@@ -14,6 +14,7 @@ import ResetPassword from "./pages/ResetPassword";
 import ProductDetail from "./pages/ProductDetail";
 import MyOrders from "./pages/MyOrders";
 import LessonsManager from "./components/dashboard/LessonsManager";
+import CoursePreview from "./pages/CoursePreview";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -33,6 +34,7 @@ const App = () => (
           <Route path="/explore" element={<Explore />} />
           <Route path="/creator/:creatorId" element={<CreatorStorefront />} />
           <Route path="/course/:courseId" element={<CourseViewer />} />
+          <Route path="/course-preview/:courseId" element={<CoursePreview />} />
           <Route path="/course/:courseId/lessons" element={<LessonsManager />} />
           <Route path="/product/:productId" element={<ProductDetail />} />
           <Route path="/my-orders" element={<MyOrders />} />

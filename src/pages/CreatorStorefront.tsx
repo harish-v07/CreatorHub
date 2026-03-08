@@ -383,7 +383,11 @@ export default function CreatorStorefront() {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {courses.map((course) => (
-                    <Card key={course.id} className="shadow-soft hover:shadow-hover transition-all">
+                    <Card
+                      key={course.id}
+                      className="shadow-soft hover:shadow-hover transition-all cursor-pointer hover:-translate-y-0.5"
+                      onClick={() => navigate(`/course-preview/${course.id}`)}
+                    >
                       <CardHeader>
                         <CardTitle>{course.title}</CardTitle>
                         <CardDescription>{course.category}</CardDescription>
@@ -400,14 +404,14 @@ export default function CreatorStorefront() {
                           )}
                           {userEnrollments.has(course.id) ? (
                             <Button
-                              onClick={() => navigate(`/course/${course.id}`)}
+                              onClick={(e) => { e.stopPropagation(); navigate(`/course/${course.id}`); }}
                               variant="secondary"
                             >
                               View Course
                             </Button>
                           ) : (
                             <Button
-                              onClick={() => handleEnroll(course)}
+                              onClick={(e) => { e.stopPropagation(); handleEnroll(course); }}
                               disabled={enrolling === course.id}
                             >
                               {enrolling === course.id ? "Enrolling..." : "Enroll Now"}
