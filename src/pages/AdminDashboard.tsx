@@ -14,8 +14,9 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Trash2, Edit, Shield, Ban, UserCheck, ChevronDown, RefreshCw, Sparkles, CheckCircle2, XCircle, Clock, AlertTriangle } from "lucide-react";
+import { Trash2, Edit, Shield, Ban, UserCheck, ChevronDown, RefreshCw, Sparkles, CheckCircle2, XCircle, Clock, AlertTriangle, FileText, UserSquare2, IdCard } from "lucide-react";
 import { toast } from "sonner";
+import { getS3ViewUrl } from "@/lib/s3-upload";
 
 interface UserProfile {
   id: string;
@@ -30,10 +31,13 @@ interface UserProfile {
 }
 
 interface AiScore {
-  trust_score: number;
-  recommendation: "Approve" | "Reject" | "Review";
+  face_match_percentage: number;
+  document_authentic: boolean;
+  name_match: boolean;
+  id_format_valid: boolean;
+  confidence_score: number;
   reasoning: string;
-  red_flags: string[];
+  recommendation: "Approve" | "Reject" | "Review";
 }
 
 interface VerificationRequest {
@@ -42,8 +46,17 @@ interface VerificationRequest {
   email: string;
   bio: string;
   verification_status: string;
+  kyc_selfie_url: string | null;
+  kyc_document_url: string | null;
+  kyc_document_type: string | null;
+  kyc_full_name: string | null;
+  kyc_mobile: string | null;
+  kyc_address: string | null;
+  kyc_id_number: string | null;
   aiScore?: AiScore | null;
   scoring?: boolean;
+  selfieDataUrl?: string;
+  docDataUrl?: string;
 }
 
 export default function AdminDashboard() {
@@ -130,15 +143,37 @@ export default function AdminDashboard() {
     setVerLoading(true);
     const { data, error } = await supabase
       .from("profiles")
-      .select("id, name, email, bio, verification_status")
+      .select("id, name, email, bio, verification_status, kyc_selfie_url, kyc_document_url, kyc_document_type, kyc_full_name, kyc_mobile, kyc_address, kyc_id_number")
       .in("verification_status", ["pending", "verified", "rejected"])
       .order("updated_at" as any, { ascending: false });
 
     if (error) {
       console.error("Error fetching verification requests:", error);
-    } else {
-      setVerificationRequests((data || []).map((r: any) => ({ ...r, aiScore: null, scoring: false })));
+      setVerLoading(false);
+      return;
     }
+
+    // Load signed URLs for the images
+    const requestsWithImages = await Promise.all((data || []).map(async (req: any) => {
+      let selfieDataUrl = null;
+      let docDataUrl = null;
+      try {
+        if (req.kyc_selfie_url) selfieDataUrl = await getS3ViewUrl(req.kyc_selfie_url);
+      } catch (e) { console.error("Selfie load error", e) }
+      try {
+        if (req.kyc_document_url) docDataUrl = await getS3ViewUrl(req.kyc_document_url);
+      } catch (e) { console.error("Doc load error", e) }
+
+      return {
+        ...req,
+        aiScore: null,
+        scoring: false,
+        selfieDataUrl,
+        docDataUrl
+      };
+    }));
+
+    setVerificationRequests(requestsWithImages);
     setVerLoading(false);
   };
 
@@ -156,7 +191,7 @@ export default function AdminDashboard() {
       body: JSON.stringify(body),
     });
     const json = await response.json();
-    if (!response.ok) throw new Error(json.error || "Edge function failed");
+    if (!response.ok) throw new Error((json.details ? `${json.error}: ${json.details}` : json.error) || "Edge function failed");
     return json;
   };
 
@@ -339,9 +374,9 @@ export default function AdminDashboard() {
   };
 
   const getScoreColor = (score: number) => {
-    if (score >= 70) return "text-green-600";
-    if (score >= 45) return "text-yellow-600";
-    return "text-red-600";
+    if (score >= 80) return "text-green-600 dark:text-green-400";
+    if (score >= 50) return "text-yellow-600 dark:text-yellow-400";
+    return "text-red-600 dark:text-red-400";
   };
 
   if (loading) {
@@ -676,8 +711,48 @@ export default function AdminDashboard() {
                               {getVerStatusBadge(req.verification_status)}
                             </div>
                             <p className="text-sm text-muted-foreground">{req.email}</p>
-                            {req.bio && (
-                              <p className="text-sm mt-2 text-foreground/80 line-clamp-2">{req.bio}</p>
+
+                            {/* KYC Details extracted from request */}
+                            {req.kyc_full_name && (
+                              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-3 bg-muted/20 p-4 rounded-lg border">
+                                  <h4 className="font-semibold flex items-center gap-2 text-sm border-b pb-2">
+                                    <UserSquare2 className="h-4 w-4 text-primary" /> Personal Details
+                                  </h4>
+                                  <p className="text-sm"><span className="text-muted-foreground">Legal Name:</span> {req.kyc_full_name}</p>
+                                  <p className="text-sm"><span className="text-muted-foreground">Mobile:</span> {req.kyc_mobile}</p>
+                                  <p className="text-sm"><span className="text-muted-foreground">Address:</span> {req.kyc_address}</p>
+                                </div>
+                                <div className="space-y-3 bg-muted/20 p-4 rounded-lg border">
+                                  <h4 className="font-semibold flex items-center gap-2 text-sm border-b pb-2">
+                                    <IdCard className="h-4 w-4 text-primary" /> Document Details
+                                  </h4>
+                                  <p className="text-sm"><span className="text-muted-foreground">Type:</span> <span className="uppercase">{req.kyc_document_type?.replace('_', ' ')}</span></p>
+                                  <p className="text-sm"><span className="text-muted-foreground">ID Number:</span> {req.kyc_id_number}</p>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* KYC Images */}
+                            {(req.selfieDataUrl || req.docDataUrl) && (
+                              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {req.selfieDataUrl && (
+                                  <div className="space-y-2">
+                                    <p className="text-xs font-semibold uppercase text-muted-foreground">Live Selfie</p>
+                                    <div className="relative aspect-square md:aspect-video rounded-lg overflow-hidden border-2 bg-black">
+                                      <img src={req.selfieDataUrl} alt="KYC Selfie" className="w-full h-full object-cover" />
+                                    </div>
+                                  </div>
+                                )}
+                                {req.docDataUrl && (
+                                  <div className="space-y-2">
+                                    <p className="text-xs font-semibold uppercase text-muted-foreground">Government ID Photo</p>
+                                    <div className="relative aspect-video rounded-lg overflow-hidden border-2 bg-black">
+                                      <img src={req.docDataUrl} alt="KYC Document" className="w-full h-full object-contain" />
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
                             )}
                           </div>
 
@@ -726,44 +801,62 @@ export default function AdminDashboard() {
 
                         {/* AI Score panel */}
                         {req.aiScore && (
-                          <div className="rounded-lg border bg-muted/40 p-4 space-y-3">
-                            <div className="flex items-center gap-3">
-                              <Sparkles className="h-4 w-4 text-primary flex-shrink-0" />
-                              <span className="text-sm font-semibold">Gemini AI Trust Assessment</span>
-                              <div className="ml-auto flex items-center gap-2">
-                                <span className={`text-2xl font-bold ${getScoreColor(req.aiScore.trust_score)}`}>
-                                  {req.aiScore.trust_score}
+                          <div className="rounded-lg border bg-muted/40 p-5 space-y-4">
+                            <div className="flex items-center justify-between border-b pb-3">
+                              <div className="flex items-center gap-2">
+                                <Sparkles className="h-5 w-5 text-primary" />
+                                <span className="font-bold text-lg">Gemini Vision Analysis</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium">Confidence:</span>
+                                <span className={`text-xl font-bold ${getScoreColor(req.aiScore.confidence_score)}`}>
+                                  {req.aiScore.confidence_score}%
                                 </span>
-                                <span className="text-muted-foreground text-sm">/100</span>
                                 <Badge
-                                  className={
-                                    req.aiScore.recommendation === "Approve"
-                                      ? "bg-green-600 text-white"
-                                      : req.aiScore.recommendation === "Reject"
-                                        ? "bg-red-600 text-white"
-                                        : "bg-yellow-500 text-white"
-                                  }
+                                  className={`ml-2 ${req.aiScore.recommendation === "Approve" ? "bg-green-600" :
+                                    req.aiScore.recommendation === "Reject" ? "bg-red-600" : "bg-yellow-500"
+                                    } text-white`}
                                 >
                                   {req.aiScore.recommendation}
                                 </Badge>
                               </div>
                             </div>
 
-                            <p className="text-sm text-foreground/80">{req.aiScore.reasoning}</p>
-
-                            {req.aiScore.red_flags && req.aiScore.red_flags.length > 0 && (
-                              <div className="flex flex-wrap gap-2">
-                                {req.aiScore.red_flags.map((flag, i) => (
-                                  <span
-                                    key={i}
-                                    className="flex items-center gap-1 text-xs bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300 rounded-full px-2 py-1"
-                                  >
-                                    <AlertTriangle className="h-3 w-3" />
-                                    {flag}
-                                  </span>
-                                ))}
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                              <div className="bg-background rounded-md p-3 border">
+                                <p className="text-xs text-muted-foreground mb-1">Face Match</p>
+                                <div className="flex items-center gap-2">
+                                  {req.aiScore.face_match_percentage >= 80 ? <CheckCircle2 className="h-4 w-4 text-green-500" /> : <XCircle className="h-4 w-4 text-red-500" />}
+                                  <span className="font-semibold">{req.aiScore.face_match_percentage}%</span>
+                                </div>
                               </div>
-                            )}
+                              <div className="bg-background rounded-md p-3 border">
+                                <p className="text-xs text-muted-foreground mb-1">Doc Authentic</p>
+                                <div className="flex items-center gap-2">
+                                  {req.aiScore.document_authentic ? <CheckCircle2 className="h-4 w-4 text-green-500" /> : <XCircle className="h-4 w-4 text-red-500" />}
+                                  <span className="font-semibold">{req.aiScore.document_authentic ? "Yes" : "No / Suspicious"}</span>
+                                </div>
+                              </div>
+                              <div className="bg-background rounded-md p-3 border">
+                                <p className="text-xs text-muted-foreground mb-1">Name Match</p>
+                                <div className="flex items-center gap-2">
+                                  {req.aiScore.name_match ? <CheckCircle2 className="h-4 w-4 text-green-500" /> : <XCircle className="h-4 w-4 text-red-500" />}
+                                  <span className="font-semibold">{req.aiScore.name_match ? "Yes" : "Mismatch"}</span>
+                                </div>
+                              </div>
+                              <div className="bg-background rounded-md p-3 border">
+                                <p className="text-xs text-muted-foreground mb-1">ID Format</p>
+                                <div className="flex items-center gap-2">
+                                  {req.aiScore.id_format_valid ? <CheckCircle2 className="h-4 w-4 text-green-500" /> : <XCircle className="h-4 w-4 text-red-500" />}
+                                  <span className="font-semibold">{req.aiScore.id_format_valid ? "Valid" : "Invalid"}</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="bg-background rounded-md p-4 border mt-2">
+                              <p className="text-sm font-semibold mb-1">AI Reasoning:</p>
+                              <p className="text-sm text-foreground/80">{req.aiScore.reasoning}</p>
+                            </div>
                           </div>
                         )}
                       </div>

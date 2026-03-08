@@ -11,6 +11,7 @@ import StorefrontEditor from "./StorefrontEditor";
 import ProfileEditor from "./ProfileEditor";
 import EarningsManager from "./EarningsManager";
 import CreatorPaymentSettings from "./CreatorPaymentSettings";
+import VerificationForm from "./VerificationForm";
 import CreatorOrdersManager from "./CreatorOrdersManager";
 import PickupAddressSettings from "./PickupAddressSettings";
 import {
@@ -30,7 +31,7 @@ export default function CreatorDashboard() {
   const [copied, setCopied] = useState(false);
   const [verificationStatus, setVerificationStatus] = useState<string>("unverified");
   const [verificationNotes, setVerificationNotes] = useState<string | null>(null);
-  const [applying, setApplying] = useState(false);
+  const [showVerificationForm, setShowVerificationForm] = useState(false);
 
   useEffect(() => {
     fetchStats();
@@ -96,24 +97,9 @@ export default function CreatorDashboard() {
     }
   };
 
-  const handleApplyForVerification = async () => {
-    setApplying(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      const { error } = await supabase
-        .from("profiles")
-        .update({ verification_status: "pending", verification_notes: null })
-        .eq("id", user.id);
-      if (error) throw error;
-      setVerificationStatus("pending");
-      setVerificationNotes(null);
-      toast.success("Verification request submitted! An admin will review your profile.");
-    } catch (err: any) {
-      toast.error("Failed to submit verification request");
-    } finally {
-      setApplying(false);
-    }
+  const handleVerificationComplete = () => {
+    setShowVerificationForm(false);
+    fetchVerificationStatus();
   };
 
   const fetchStats = async () => {
@@ -333,18 +319,23 @@ export default function CreatorDashboard() {
                 )}
               </div>
             </div>
-            {(verificationStatus === "unverified" || verificationStatus === "rejected") && (
+            {(verificationStatus === "unverified" || verificationStatus === "rejected") && !showVerificationForm && (
               <Button
-                onClick={handleApplyForVerification}
-                disabled={applying}
+                onClick={() => setShowVerificationForm(true)}
                 className="gap-2 flex-shrink-0"
                 variant={verificationStatus === "rejected" ? "outline" : "default"}
               >
                 <Sparkles className="h-4 w-4" />
-                {applying ? "Submitting..." : verificationStatus === "rejected" ? "Re-apply" : "Apply for Verification"}
+                {verificationStatus === "rejected" ? "Re-apply KYC" : "Start KYC Verification"}
               </Button>
             )}
           </div>
+
+          {showVerificationForm && (
+            <div className="mt-8 animate-in fade-in slide-in-from-top-4">
+              <VerificationForm onComplete={handleVerificationComplete} />
+            </div>
+          )}
         </CardContent>
       </Card>
 
