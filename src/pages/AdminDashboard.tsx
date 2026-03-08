@@ -6,13 +6,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Trash2, Edit, Shield, Ban, UserCheck, ChevronDown, RefreshCw } from "lucide-react";
+import { Trash2, Edit, Shield, Ban, UserCheck, ChevronDown, RefreshCw, Sparkles, CheckCircle2, XCircle, Clock, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
 interface UserProfile {
@@ -23,6 +25,25 @@ interface UserProfile {
   status: string;
   suspended_until: string | null;
   role: string;
+  verification_status?: string;
+  is_verified?: boolean;
+}
+
+interface AiScore {
+  trust_score: number;
+  recommendation: "Approve" | "Reject" | "Review";
+  reasoning: string;
+  red_flags: string[];
+}
+
+interface VerificationRequest {
+  id: string;
+  name: string;
+  email: string;
+  bio: string;
+  verification_status: string;
+  aiScore?: AiScore | null;
+  scoring?: boolean;
 }
 
 export default function AdminDashboard() {
@@ -34,6 +55,12 @@ export default function AdminDashboard() {
   const [suspendDays, setSuspendDays] = useState<string>("7");
   const [currentAdminId, setCurrentAdminId] = useState<string>("");
   const [pendingBanUser, setPendingBanUser] = useState<UserProfile | null>(null);
+
+  // Verification tab state
+  const [verificationRequests, setVerificationRequests] = useState<VerificationRequest[]>([]);
+  const [verLoading, setVerLoading] = useState(false);
+  const [rejectUser, setRejectUser] = useState<VerificationRequest | null>(null);
+  const [rejectNotes, setRejectNotes] = useState("");
 
   useEffect(() => {
     checkAdminAccess();
@@ -63,6 +90,7 @@ export default function AdminDashboard() {
     }
 
     fetchUsers();
+    fetchVerificationRequests();
   };
 
   const fetchUsers = async () => {
@@ -96,6 +124,83 @@ export default function AdminDashboard() {
 
     setUsers(usersWithRoles);
     setLoading(false);
+  };
+
+  const fetchVerificationRequests = async () => {
+    setVerLoading(true);
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, name, email, bio, verification_status")
+      .in("verification_status", ["pending", "verified", "rejected"])
+      .order("updated_at" as any, { ascending: false });
+
+    if (error) {
+      console.error("Error fetching verification requests:", error);
+    } else {
+      setVerificationRequests((data || []).map((r: any) => ({ ...r, aiScore: null, scoring: false })));
+    }
+    setVerLoading(false);
+  };
+
+  // ── Invoke verify-seller edge function ────────────────────────────────────
+  const invokeVerifySeller = async (body: object) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const response = await fetch(`${supabaseUrl}/functions/v1/verify-seller`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${session?.access_token}`,
+        "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+      },
+      body: JSON.stringify(body),
+    });
+    const json = await response.json();
+    if (!response.ok) throw new Error(json.error || "Edge function failed");
+    return json;
+  };
+
+  // ── Get AI Score ──────────────────────────────────────────────────────────
+  const handleGetAiScore = async (req: VerificationRequest) => {
+    setVerificationRequests((prev) =>
+      prev.map((r) => r.id === req.id ? { ...r, scoring: true } : r)
+    );
+    try {
+      const result = await invokeVerifySeller({ userId: req.id, action: "score" });
+      setVerificationRequests((prev) =>
+        prev.map((r) => r.id === req.id ? { ...r, aiScore: result.ai_score, scoring: false } : r)
+      );
+    } catch (err: any) {
+      toast.error("Failed to get AI score: " + err.message);
+      setVerificationRequests((prev) =>
+        prev.map((r) => r.id === req.id ? { ...r, scoring: false } : r)
+      );
+    }
+  };
+
+  // ── Approve verification ──────────────────────────────────────────────────
+  const handleApprove = async (req: VerificationRequest) => {
+    try {
+      await invokeVerifySeller({ userId: req.id, action: "approve" });
+      toast.success(`${req.name} has been verified ✓`);
+      fetchVerificationRequests();
+    } catch (err: any) {
+      toast.error("Failed to approve: " + err.message);
+    }
+  };
+
+  // ── Reject verification ───────────────────────────────────────────────────
+  const handleReject = async () => {
+    if (!rejectUser) return;
+    try {
+      await invokeVerifySeller({ userId: rejectUser.id, action: "reject", notes: rejectNotes });
+      toast.success(`${rejectUser.name}'s verification has been rejected`);
+      setRejectUser(null);
+      setRejectNotes("");
+      fetchVerificationRequests();
+    } catch (err: any) {
+      toast.error("Failed to reject: " + err.message);
+    }
   };
 
   // ── Delete account entirely from DB ──────────────────────────────────────
@@ -149,10 +254,9 @@ export default function AdminDashboard() {
         .eq("id", userId);
       if (error) throw error;
 
-      // Kick out active session immediately by clearing active_session_id
       await supabase
         .from("profiles")
-        .update({ active_session_id: null })
+        .update({ active_session_id: null } as any)
         .eq("id", userId);
 
       toast.success(`User suspended for ${days} day(s)`);
@@ -172,10 +276,9 @@ export default function AdminDashboard() {
         .eq("id", userId);
       if (error) throw error;
 
-      // Kick out immediately
       await supabase
         .from("profiles")
-        .update({ active_session_id: null })
+        .update({ active_session_id: null } as any)
         .eq("id", userId);
 
       toast.success("User banned permanently");
@@ -213,7 +316,6 @@ export default function AdminDashboard() {
         const daysLeft = Math.ceil((until.getTime() - Date.now()) / 86400000);
         return <Badge className="bg-yellow-500 hover:bg-yellow-600 text-white">Suspended ({daysLeft}d left)</Badge>;
       }
-      // Suspension expired — auto-mark active
       handleReactivate(user.id);
       return <Badge className="bg-green-600 text-white">Active</Badge>;
     }
@@ -227,6 +329,19 @@ export default function AdminDashboard() {
       learner: "bg-gray-500 text-white",
     };
     return <Badge className={colors[role] || colors.learner}>{role}</Badge>;
+  };
+
+  const getVerStatusBadge = (status: string) => {
+    if (status === "pending") return <Badge className="bg-yellow-500 text-white gap-1"><Clock className="h-3 w-3" />Pending</Badge>;
+    if (status === "verified") return <Badge className="bg-green-600 text-white gap-1"><CheckCircle2 className="h-3 w-3" />Verified</Badge>;
+    if (status === "rejected") return <Badge variant="destructive" className="gap-1"><XCircle className="h-3 w-3" />Rejected</Badge>;
+    return <Badge variant="secondary">Unverified</Badge>;
+  };
+
+  const getScoreColor = (score: number) => {
+    if (score >= 70) return "text-green-600";
+    if (score >= 45) return "text-yellow-600";
+    return "text-red-600";
   };
 
   if (loading) {
@@ -245,7 +360,7 @@ export default function AdminDashboard() {
     <div className="min-h-screen bg-background">
       <Navbar />
 
-      {/* ── Ban confirmation dialog (outside table to avoid nesting) ── */}
+      {/* ── Ban confirmation dialog ── */}
       <AlertDialog open={!!pendingBanUser} onOpenChange={(open) => { if (!open) setPendingBanUser(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -267,211 +382,398 @@ export default function AdminDashboard() {
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* ── Reject verification dialog ── */}
+      <Dialog open={!!rejectUser} onOpenChange={(open) => { if (!open) { setRejectUser(null); setRejectNotes(""); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reject Verification — {rejectUser?.name}</DialogTitle>
+            <DialogDescription>
+              Provide a reason for rejection. This will be shown to the seller.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-3">
+            <Label>Rejection Reason (optional)</Label>
+            <Textarea
+              placeholder="e.g. Insufficient profile information, no bio provided..."
+              value={rejectNotes}
+              onChange={(e) => setRejectNotes(e.target.value)}
+              rows={3}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setRejectUser(null); setRejectNotes(""); }}>Cancel</Button>
+            <Button variant="destructive" onClick={handleReject}>Reject Verification</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <div className="container mx-auto p-8 pt-28">
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Shield className="h-6 w-6 text-primary" />
-                <CardTitle>Admin Dashboard</CardTitle>
-              </div>
-              <Button variant="outline" size="sm" onClick={fetchUsers}>
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Refresh
-              </Button>
-            </div>
-            <CardDescription>
-              Manage user accounts, roles, and access. Total: <strong>{users.length}</strong> users.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Role</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Joined</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {users.map((user) => (
-                    <TableRow key={user.id} className={user.id === currentAdminId ? "bg-primary/5" : ""}>
-                      <TableCell className="font-medium">
-                        {user.name}
-                        {user.id === currentAdminId && (
-                          <span className="ml-2 text-xs text-muted-foreground">(you)</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{user.email}</TableCell>
-                      <TableCell>{getRoleBadge(user.role)}</TableCell>
-                      <TableCell>{getStatusBadge(user)}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {new Date(user.created_at).toLocaleDateString()}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 mb-6">
+          <Shield className="h-7 w-7 text-primary" />
+          <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+        </div>
 
-                          {/* ── Edit Role ── */}
-                          {user.id !== currentAdminId && (
-                            <Dialog>
-                              <DialogTrigger asChild>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => { setSelectedUser(user); setNewRole(user.role); }}
-                                >
-                                  <Edit className="h-4 w-4" />
-                                </Button>
-                              </DialogTrigger>
-                              <DialogContent>
-                                <DialogHeader>
-                                  <DialogTitle>Change Role — {selectedUser?.name}</DialogTitle>
-                                  <DialogDescription>
-                                    Update this user's platform role.
-                                  </DialogDescription>
-                                </DialogHeader>
-                                <div className="py-4 space-y-4">
-                                  <Label>Role</Label>
-                                  <Select value={newRole} onValueChange={setNewRole}>
-                                    <SelectTrigger>
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="learner">Learner</SelectItem>
-                                      <SelectItem value="creator">Creator</SelectItem>
-                                      <SelectItem value="admin">Admin</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                                <DialogFooter>
-                                  <Button onClick={handleUpdateRole}>Save Changes</Button>
-                                </DialogFooter>
-                              </DialogContent>
-                            </Dialog>
-                          )}
+        <Tabs defaultValue="users">
+          <TabsList className="mb-6">
+            <TabsTrigger value="users">User Management</TabsTrigger>
+            <TabsTrigger value="verification" className="gap-2">
+              <Sparkles className="h-4 w-4" />
+              Verification Requests
+              {verificationRequests.filter(r => r.verification_status === "pending").length > 0 && (
+                <span className="ml-1 bg-yellow-500 text-white text-xs rounded-full px-1.5 py-0.5">
+                  {verificationRequests.filter(r => r.verification_status === "pending").length}
+                </span>
+              )}
+            </TabsTrigger>
+          </TabsList>
 
-                          {/* ── Suspend / Ban / Reactivate dropdown ── */}
-                          {user.id !== currentAdminId && (
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="outline" size="sm">
-                                  <Ban className="h-4 w-4 mr-1" />
-                                  <ChevronDown className="h-3 w-3" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="w-56">
-                                <DropdownMenuLabel>Account Control</DropdownMenuLabel>
-                                <DropdownMenuSeparator />
+          {/* ══ USER MANAGEMENT TAB ══════════════════════════════════════════════ */}
+          <TabsContent value="users">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>All Users</CardTitle>
+                    <CardDescription>
+                      Manage user accounts, roles, and access. Total: <strong>{users.length}</strong> users.
+                    </CardDescription>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={fetchUsers}>
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Refresh
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Email</TableHead>
+                        <TableHead>Role</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Joined</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {users.map((user) => (
+                        <TableRow key={user.id} className={user.id === currentAdminId ? "bg-primary/5" : ""}>
+                          <TableCell className="font-medium">
+                            {user.name}
+                            {user.id === currentAdminId && (
+                              <span className="ml-2 text-xs text-muted-foreground">(you)</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">{user.email}</TableCell>
+                          <TableCell>{getRoleBadge(user.role)}</TableCell>
+                          <TableCell>{getStatusBadge(user)}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {new Date(user.created_at).toLocaleDateString()}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
 
-                                {/* Suspend for N days */}
-                                <div className="px-2 py-1.5">
-                                  <Label className="text-xs text-muted-foreground mb-1 block">
-                                    Suspend for (days)
-                                  </Label>
-                                  <div className="flex gap-2">
-                                    <Input
-                                      type="number"
-                                      min="1"
-                                      value={suspendDays}
-                                      onChange={(e) => setSuspendDays(e.target.value)}
-                                      className="h-7 text-sm"
-                                    />
+                              {/* ── Edit Role ── */}
+                              {user.id !== currentAdminId && (
+                                <Dialog>
+                                  <DialogTrigger asChild>
                                     <Button
+                                      variant="outline"
                                       size="sm"
-                                      variant="secondary"
-                                      className="h-7 px-2 text-xs"
-                                      onClick={() => handleSuspend(user.id)}
+                                      onClick={() => { setSelectedUser(user); setNewRole(user.role); }}
                                     >
-                                      Apply
+                                      <Edit className="h-4 w-4" />
                                     </Button>
-                                  </div>
-                                </div>
+                                  </DialogTrigger>
+                                  <DialogContent>
+                                    <DialogHeader>
+                                      <DialogTitle>Change Role — {selectedUser?.name}</DialogTitle>
+                                      <DialogDescription>
+                                        Update this user's platform role.
+                                      </DialogDescription>
+                                    </DialogHeader>
+                                    <div className="py-4 space-y-4">
+                                      <Label>Role</Label>
+                                      <Select value={newRole} onValueChange={setNewRole}>
+                                        <SelectTrigger>
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="learner">Learner</SelectItem>
+                                          <SelectItem value="creator">Creator</SelectItem>
+                                          <SelectItem value="admin">Admin</SelectItem>
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                    <DialogFooter>
+                                      <Button onClick={handleUpdateRole}>Save Changes</Button>
+                                    </DialogFooter>
+                                  </DialogContent>
+                                </Dialog>
+                              )}
 
-                                <DropdownMenuSeparator />
+                              {/* ── Suspend / Ban / Reactivate dropdown ── */}
+                              {user.id !== currentAdminId && (
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="outline" size="sm">
+                                      <Ban className="h-4 w-4 mr-1" />
+                                      <ChevronDown className="h-3 w-3" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end" className="w-56">
+                                    <DropdownMenuLabel>Account Control</DropdownMenuLabel>
+                                    <DropdownMenuSeparator />
 
-                                {/* Permanent Ban — opens confirmation dialog */}
-                                <DropdownMenuItem
-                                  className="text-red-600 focus:text-red-600 cursor-pointer"
-                                  onClick={() => setPendingBanUser(user)}
-                                >
-                                  <Ban className="h-4 w-4 mr-2" />
-                                  Ban Permanently
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
+                                    <div className="px-2 py-1.5">
+                                      <Label className="text-xs text-muted-foreground mb-1 block">
+                                        Suspend for (days)
+                                      </Label>
+                                      <div className="flex gap-2">
+                                        <Input
+                                          type="number"
+                                          min="1"
+                                          value={suspendDays}
+                                          onChange={(e) => setSuspendDays(e.target.value)}
+                                          className="h-7 text-sm"
+                                        />
+                                        <Button
+                                          size="sm"
+                                          variant="secondary"
+                                          className="h-7 px-2 text-xs"
+                                          onClick={() => handleSuspend(user.id)}
+                                        >
+                                          Apply
+                                        </Button>
+                                      </div>
+                                    </div>
+
+                                    <DropdownMenuSeparator />
+
+                                    <DropdownMenuItem
+                                      className="text-red-600 focus:text-red-600 cursor-pointer"
+                                      onClick={() => setPendingBanUser(user)}
+                                    >
+                                      <Ban className="h-4 w-4 mr-2" />
+                                      Ban Permanently
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              )}
+
+                              {/* ── Unban / Reactivate ── */}
+                              {user.id !== currentAdminId && (user.status === "suspended" || user.status === "banned") && (
+                                <AlertDialog>
+                                  <AlertDialogTrigger asChild>
+                                    <Button variant="outline" size="sm" className="text-green-600 border-green-600 hover:bg-green-600/10">
+                                      <UserCheck className="h-4 w-4 mr-1" />
+                                      Unban
+                                    </Button>
+                                  </AlertDialogTrigger>
+                                  <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                      <AlertDialogTitle>Unban / Reactivate — {user.name}</AlertDialogTitle>
+                                      <AlertDialogDescription>
+                                        This will restore <strong>{user.email}</strong>'s access to the platform.
+                                      </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                      <AlertDialogAction
+                                        className="bg-green-600 text-white hover:bg-green-700"
+                                        onClick={() => handleReactivate(user.id)}
+                                      >
+                                        Yes, Reactivate
+                                      </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                  </AlertDialogContent>
+                                </AlertDialog>
+                              )}
+
+                              {/* ── Delete Account ── */}
+                              {user.id !== currentAdminId && (
+                                <AlertDialog>
+                                  <AlertDialogTrigger asChild>
+                                    <Button variant="destructive" size="sm">
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </AlertDialogTrigger>
+                                  <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                      <AlertDialogTitle>Delete Account — {user.name}</AlertDialogTitle>
+                                      <AlertDialogDescription>
+                                        This will permanently delete <strong>{user.name}</strong>'s account and ALL their data
+                                        (courses, products, enrollments, orders). This action <strong>cannot be undone</strong>.
+                                      </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                      <AlertDialogAction
+                                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                        onClick={() => handleDeleteUser(user.id)}
+                                      >
+                                        Delete Forever
+                                      </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                  </AlertDialogContent>
+                                </AlertDialog>
+                              )}
+
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ══ VERIFICATION TAB ═════════════════════════════════════════════════ */}
+          <TabsContent value="verification">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="h-5 w-5 text-primary" />
+                      <CardTitle>Seller Verification Requests</CardTitle>
+                    </div>
+                    <CardDescription className="mt-1">
+                      Review seller applications and use Gemini AI to get a trust score before approving.
+                    </CardDescription>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={fetchVerificationRequests}>
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Refresh
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {verLoading ? (
+                  <div className="text-center py-8">
+                    <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                    <p className="text-muted-foreground text-sm">Loading requests…</p>
+                  </div>
+                ) : verificationRequests.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <CheckCircle2 className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                    <p className="font-medium">No verification requests yet</p>
+                    <p className="text-sm mt-1">When sellers apply for verification, they'll appear here.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {verificationRequests.map((req) => (
+                      <div key={req.id} className="border rounded-xl p-5 space-y-4 bg-card">
+                        {/* Header row */}
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-semibold text-lg">{req.name}</span>
+                              {getVerStatusBadge(req.verification_status)}
+                            </div>
+                            <p className="text-sm text-muted-foreground">{req.email}</p>
+                            {req.bio && (
+                              <p className="text-sm mt-2 text-foreground/80 line-clamp-2">{req.bio}</p>
+                            )}
+                          </div>
+
+                          {/* Action buttons */}
+                          {req.verification_status === "pending" && (
+                            <div className="flex gap-2 flex-shrink-0">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleGetAiScore(req)}
+                                disabled={req.scoring}
+                                className="gap-1.5"
+                              >
+                                {req.scoring ? (
+                                  <>
+                                    <div className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                                    Scoring…
+                                  </>
+                                ) : (
+                                  <>
+                                    <Sparkles className="h-3.5 w-3.5 text-primary" />
+                                    AI Score
+                                  </>
+                                )}
+                              </Button>
+                              <Button
+                                size="sm"
+                                className="bg-green-600 hover:bg-green-700 text-white gap-1.5"
+                                onClick={() => handleApprove(req)}
+                              >
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                Approve
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                className="gap-1.5"
+                                onClick={() => { setRejectUser(req); setRejectNotes(""); }}
+                              >
+                                <XCircle className="h-3.5 w-3.5" />
+                                Reject
+                              </Button>
+                            </div>
                           )}
-
-                          {/* ── Unban / Reactivate button — visible directly in row ── */}
-                          {user.id !== currentAdminId && (user.status === "suspended" || user.status === "banned") && (
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button variant="outline" size="sm" className="text-green-600 border-green-600 hover:bg-green-600/10">
-                                  <UserCheck className="h-4 w-4 mr-1" />
-                                  Unban
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>Unban / Reactivate — {user.name}</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    This will restore <strong>{user.email}</strong>'s access to the platform. They will be able to log in immediately.
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                  <AlertDialogAction
-                                    className="bg-green-600 text-white hover:bg-green-700"
-                                    onClick={() => handleReactivate(user.id)}
-                                  >
-                                    Yes, Reactivate
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          )}
-
-                          {/* ── Delete Account ── */}
-                          {user.id !== currentAdminId && (
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button variant="destructive" size="sm">
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>Delete Account — {user.name}</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    This will permanently delete <strong>{user.name}</strong>'s account and ALL their data
-                                    (courses, products, enrollments, orders). This action <strong>cannot be undone</strong>.
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                  <AlertDialogAction
-                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                    onClick={() => handleDeleteUser(user.id)}
-                                  >
-                                    Delete Forever
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          )}
-
                         </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
+
+                        {/* AI Score panel */}
+                        {req.aiScore && (
+                          <div className="rounded-lg border bg-muted/40 p-4 space-y-3">
+                            <div className="flex items-center gap-3">
+                              <Sparkles className="h-4 w-4 text-primary flex-shrink-0" />
+                              <span className="text-sm font-semibold">Gemini AI Trust Assessment</span>
+                              <div className="ml-auto flex items-center gap-2">
+                                <span className={`text-2xl font-bold ${getScoreColor(req.aiScore.trust_score)}`}>
+                                  {req.aiScore.trust_score}
+                                </span>
+                                <span className="text-muted-foreground text-sm">/100</span>
+                                <Badge
+                                  className={
+                                    req.aiScore.recommendation === "Approve"
+                                      ? "bg-green-600 text-white"
+                                      : req.aiScore.recommendation === "Reject"
+                                        ? "bg-red-600 text-white"
+                                        : "bg-yellow-500 text-white"
+                                  }
+                                >
+                                  {req.aiScore.recommendation}
+                                </Badge>
+                              </div>
+                            </div>
+
+                            <p className="text-sm text-foreground/80">{req.aiScore.reasoning}</p>
+
+                            {req.aiScore.red_flags && req.aiScore.red_flags.length > 0 && (
+                              <div className="flex flex-wrap gap-2">
+                                {req.aiScore.red_flags.map((flag, i) => (
+                                  <span
+                                    key={i}
+                                    className="flex items-center gap-1 text-xs bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300 rounded-full px-2 py-1"
+                                  >
+                                    <AlertTriangle className="h-3 w-3" />
+                                    {flag}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );

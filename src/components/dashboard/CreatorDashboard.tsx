@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { BookOpen, Package, Store, IndianRupee, Share2, Copy, Check } from "lucide-react";
+import { BookOpen, Package, Store, IndianRupee, Share2, Copy, Check, ShieldCheck, ShieldAlert, Clock, Sparkles } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import CoursesManager from "./CoursesManager";
@@ -11,6 +11,8 @@ import StorefrontEditor from "./StorefrontEditor";
 import ProfileEditor from "./ProfileEditor";
 import EarningsManager from "./EarningsManager";
 import CreatorPaymentSettings from "./CreatorPaymentSettings";
+import CreatorOrdersManager from "./CreatorOrdersManager";
+import PickupAddressSettings from "./PickupAddressSettings";
 import {
   Popover,
   PopoverContent,
@@ -26,10 +28,14 @@ export default function CreatorDashboard() {
   });
   const [userId, setUserId] = useState<string>("");
   const [copied, setCopied] = useState(false);
+  const [verificationStatus, setVerificationStatus] = useState<string>("unverified");
+  const [verificationNotes, setVerificationNotes] = useState<string | null>(null);
+  const [applying, setApplying] = useState(false);
 
   useEffect(() => {
     fetchStats();
     fetchUserId();
+    fetchVerificationStatus();
 
     // Subscribe to real-time updates for enrollments
     const enrollmentsChannel = supabase
@@ -73,6 +79,40 @@ export default function CreatorDashboard() {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       setUserId(user.id);
+    }
+  };
+
+  const fetchVerificationStatus = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data } = await supabase
+      .from("profiles")
+      .select("verification_status, verification_notes")
+      .eq("id", user.id)
+      .single();
+    if (data) {
+      setVerificationStatus(data.verification_status || "unverified");
+      setVerificationNotes(data.verification_notes || null);
+    }
+  };
+
+  const handleApplyForVerification = async () => {
+    setApplying(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { error } = await supabase
+        .from("profiles")
+        .update({ verification_status: "pending", verification_notes: null })
+        .eq("id", user.id);
+      if (error) throw error;
+      setVerificationStatus("pending");
+      setVerificationNotes(null);
+      toast.success("Verification request submitted! An admin will review your profile.");
+    } catch (err: any) {
+      toast.error("Failed to submit verification request");
+    } finally {
+      setApplying(false);
     }
   };
 
@@ -207,7 +247,7 @@ export default function CreatorDashboard() {
       </div>
 
       {/* Stats Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
         <Card className="shadow-soft">
           <CardHeader className="pb-3">
             <CardDescription>Total Courses</CardDescription>
@@ -251,14 +291,73 @@ export default function CreatorDashboard() {
         </Card>
       </div>
 
+      {/* Verification Status Card */}
+      <Card className={`mb-8 border-2 ${verificationStatus === "verified" ? "border-green-500/60 bg-green-50/50 dark:bg-green-950/20" :
+        verificationStatus === "pending" ? "border-yellow-500/60 bg-yellow-50/50 dark:bg-yellow-950/20" :
+          verificationStatus === "rejected" ? "border-red-500/60 bg-red-50/50 dark:bg-red-950/20" :
+            "border-dashed"
+        }`}>
+        <CardContent className="py-5">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 justify-between">
+            <div className="flex items-center gap-3">
+              {verificationStatus === "verified" && <ShieldCheck className="h-8 w-8 text-green-600 flex-shrink-0" />}
+              {verificationStatus === "pending" && <Clock className="h-8 w-8 text-yellow-600 flex-shrink-0" />}
+              {verificationStatus === "rejected" && <ShieldAlert className="h-8 w-8 text-red-600 flex-shrink-0" />}
+              {verificationStatus === "unverified" && <Sparkles className="h-8 w-8 text-muted-foreground flex-shrink-0" />}
+              <div>
+                {verificationStatus === "verified" && (
+                  <>
+                    <p className="font-semibold text-green-700 dark:text-green-400">✓ Verified Seller</p>
+                    <p className="text-sm text-muted-foreground">Your profile is verified. A badge is shown on your storefront.</p>
+                  </>
+                )}
+                {verificationStatus === "pending" && (
+                  <>
+                    <p className="font-semibold text-yellow-700 dark:text-yellow-400">Verification Pending</p>
+                    <p className="text-sm text-muted-foreground">Your request is under review. An admin will respond soon.</p>
+                  </>
+                )}
+                {verificationStatus === "rejected" && (
+                  <>
+                    <p className="font-semibold text-red-700 dark:text-red-400">Verification Rejected</p>
+                    {verificationNotes && (
+                      <p className="text-sm text-muted-foreground mt-0.5">Reason: {verificationNotes}</p>
+                    )}
+                  </>
+                )}
+                {verificationStatus === "unverified" && (
+                  <>
+                    <p className="font-semibold">Get Verified</p>
+                    <p className="text-sm text-muted-foreground">Build buyer trust with a verified seller badge on your storefront.</p>
+                  </>
+                )}
+              </div>
+            </div>
+            {(verificationStatus === "unverified" || verificationStatus === "rejected") && (
+              <Button
+                onClick={handleApplyForVerification}
+                disabled={applying}
+                className="gap-2 flex-shrink-0"
+                variant={verificationStatus === "rejected" ? "outline" : "default"}
+              >
+                <Sparkles className="h-4 w-4" />
+                {applying ? "Submitting..." : verificationStatus === "rejected" ? "Re-apply" : "Apply for Verification"}
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Main Content Tabs */}
       <Tabs defaultValue="courses" className="w-full">
-        <TabsList className="grid w-full grid-cols-6 max-w-4xl mb-8">
-          <TabsTrigger value="courses">My Courses</TabsTrigger>
-          <TabsTrigger value="products">My Products</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-4 sm:grid-cols-8 max-w-5xl mb-8">
+          <TabsTrigger value="courses">Courses</TabsTrigger>
+          <TabsTrigger value="products">Products</TabsTrigger>
+          <TabsTrigger value="orders">Orders</TabsTrigger>
           <TabsTrigger value="storefront">Storefront</TabsTrigger>
           <TabsTrigger value="earnings">Earnings</TabsTrigger>
           <TabsTrigger value="payments">Payments</TabsTrigger>
+          <TabsTrigger value="shipping">Shipping</TabsTrigger>
           <TabsTrigger value="profile">Profile</TabsTrigger>
         </TabsList>
 
@@ -268,6 +367,10 @@ export default function CreatorDashboard() {
 
         <TabsContent value="products">
           <ProductsManager onProductChange={fetchStats} />
+        </TabsContent>
+
+        <TabsContent value="orders">
+          <CreatorOrdersManager />
         </TabsContent>
 
         <TabsContent value="storefront">
@@ -280,6 +383,10 @@ export default function CreatorDashboard() {
 
         <TabsContent value="payments">
           <CreatorPaymentSettings />
+        </TabsContent>
+
+        <TabsContent value="shipping">
+          <PickupAddressSettings />
         </TabsContent>
 
         <TabsContent value="profile">

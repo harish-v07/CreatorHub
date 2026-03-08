@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "./ui/button";
-import { User, LogOut, Shield } from "lucide-react";
+import { User, LogOut, Shield, ShoppingBag } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useEffect, useState } from "react";
 import { Session } from "@supabase/supabase-js";
@@ -67,6 +67,12 @@ export const Navbar = () => {
                   <Button variant="ghost">
                     <User className="mr-2 h-4 w-4" />
                     Dashboard
+                  </Button>
+                </Link>
+                <Link to="/my-orders">
+                  <Button variant="ghost">
+                    <ShoppingBag className="mr-2 h-4 w-4" />
+                    My Orders
                   </Button>
                 </Link>
                 {isAdmin && (

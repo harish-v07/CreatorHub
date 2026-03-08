@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, ShieldCheck } from "lucide-react";
 import { useCart } from "@/hooks/useCart";
 import { S3Media } from "@/components/S3Media";
 
@@ -79,7 +79,7 @@ export default function CreatorStorefront() {
 
   const fetchCreatorData = async () => {
     const [creatorResult, coursesResult, productsResult] = await Promise.all([
-      supabase.from("public_profiles_with_roles" as any).select("id, name, bio, avatar_url, banner_url, social_links, status, suspended_until").eq("id", creatorId).single(),
+      supabase.from("public_profiles_with_roles" as any).select("id, name, bio, avatar_url, banner_url, social_links, status, suspended_until, is_verified").eq("id", creatorId).single(),
       supabase.from("courses").select("*").eq("creator_id", creatorId).eq("status", "published"),
       supabase.from("products").select("*").eq("creator_id", creatorId),
     ]);
@@ -324,7 +324,15 @@ export default function CreatorStorefront() {
               )}
 
               <div className="flex-1">
-                <h1 className="text-4xl font-bold mb-2">{creator.name}</h1>
+                <div className="flex flex-wrap items-center gap-3 mb-2">
+                  <h1 className="text-4xl font-bold">{creator.name}</h1>
+                  {creator.is_verified && (
+                    <span className="flex items-center gap-1.5 text-sm font-semibold text-blue-600 bg-blue-100 dark:bg-blue-950 dark:text-blue-300 px-3 py-1 rounded-full">
+                      <ShieldCheck className="h-4 w-4" />
+                      Verified Seller
+                    </span>
+                  )}
+                </div>
                 <p className="text-muted-foreground mb-4">{creator.bio || "No bio available"}</p>
 
                 {(socialLinks.instagram || socialLinks.twitter || socialLinks.website) && (

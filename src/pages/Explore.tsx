@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
-import { Search } from "lucide-react";
+import { Search, ShieldCheck } from "lucide-react";
 import { S3Media } from "@/components/S3Media";
 
 export default function Explore() {
@@ -105,7 +105,15 @@ export default function Explore() {
                         {creator.name?.charAt(0)}
                       </div>
                     )}
-                    <CardTitle className="mt-12">{creator.name || "Creator"}</CardTitle>
+                    <div className="mt-12 flex items-center gap-2">
+                      <CardTitle>{creator.name || "Creator"}</CardTitle>
+                      {creator.is_verified && (
+                        <span className="flex items-center gap-1 text-xs font-semibold text-blue-600 bg-blue-100 dark:bg-blue-950 dark:text-blue-300 px-2 py-0.5 rounded-full">
+                          <ShieldCheck className="h-3 w-3" />
+                          Verified
+                        </span>
+                      )}
+                    </div>
                   </CardHeader>
                   <CardContent>
                     <p className="text-sm text-muted-foreground mb-4 line-clamp-3">

@@ -12,6 +12,7 @@ import CreatorStorefront from "./pages/CreatorStorefront";
 import CourseViewer from "./pages/CourseViewer";
 import ResetPassword from "./pages/ResetPassword";
 import ProductDetail from "./pages/ProductDetail";
+import MyOrders from "./pages/MyOrders";
 import LessonsManager from "./components/dashboard/LessonsManager";
 import NotFound from "./pages/NotFound";
 
@@ -34,6 +35,7 @@ const App = () => (
           <Route path="/course/:courseId" element={<CourseViewer />} />
           <Route path="/course/:courseId/lessons" element={<LessonsManager />} />
           <Route path="/product/:productId" element={<ProductDetail />} />
+          <Route path="/my-orders" element={<MyOrders />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

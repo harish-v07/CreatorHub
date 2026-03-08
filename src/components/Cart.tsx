@@ -149,7 +149,16 @@ export const Cart = () => {
                 razorpay_order_id: response.razorpay_order_id,
                 razorpay_payment_id: response.razorpay_payment_id,
                 razorpay_signature: response.razorpay_signature,
-              })
+                delivery_address: {
+                  fullName: address.fullName,
+                  phone: address.phone,
+                  addressLine: address.addressLine,
+                  city: address.city,
+                  state: address.state,
+                  pincode: address.pincode,
+                },
+                shipment_status: 'pending',
+              }).select('id')
             );
 
             const results = await Promise.all(orderPromises);
@@ -159,6 +168,22 @@ export const Cart = () => {
               toast.error("Payment successful but order creation failed. Please contact support.");
             } else {
               toast.success("Payment successful! Your orders have been placed.");
+
+              // Create shipments for physical products
+              const physicalOrders = results.filter(
+                (result, idx) => !result.error && items[idx]?.type === 'physical'
+              );
+              for (const result of physicalOrders) {
+                const orderId = result.data?.[0]?.id;
+                if (orderId) {
+                  try {
+                    await invokeEdgeFunction('create-shipment', { order_id: orderId });
+                  } catch (e) {
+                    console.warn('Shipment creation failed for order', orderId, e);
+                  }
+                }
+              }
+
               clearCart();
               setCheckoutDialogOpen(false);
             }

@@ -175,7 +175,7 @@ export default function ProductDetail() {
                         }
 
                         // Create order record
-                        const { error: orderInsertError } = await supabase.from("orders").insert({
+                        const { error: orderInsertError, data: orderResult } = await supabase.from("orders").insert({
                             user_id: user.id,
                             item_id: product.id,
                             product_id: product.id,
@@ -185,14 +185,36 @@ export default function ProductDetail() {
                             razorpay_order_id: response.razorpay_order_id,
                             razorpay_payment_id: response.razorpay_payment_id,
                             razorpay_signature: response.razorpay_signature,
-                        });
+                            delivery_address: {
+                                fullName: address.fullName,
+                                phone: address.phone,
+                                addressLine: address.addressLine,
+                                city: address.city,
+                                state: address.state,
+                                pincode: address.pincode,
+                            },
+                            shipment_status: 'pending',
+                        }).select('id');
 
                         if (orderInsertError) {
                             toast.error("Payment successful but order creation failed. Please contact support.");
                         } else {
                             toast.success("Payment successful! Your order has been placed.");
+
+                            // Create shipment for physical products
+                            if (product.type === 'physical') {
+                                try {
+                                    const orderId = (orderResult as any)?.[0]?.id;
+                                    if (orderId) {
+                                        await invokeEdgeFunction('create-shipment', { order_id: orderId });
+                                    }
+                                } catch (e) {
+                                    console.warn('Shipment creation failed:', e);
+                                }
+                            }
+
                             setCheckoutDialogOpen(false);
-                            setTimeout(() => navigate("/dashboard"), 2000);
+                            setTimeout(() => navigate("/my-orders"), 2000);
                         }
                     } catch (error) {
                         console.error("Order creation error:", error);
