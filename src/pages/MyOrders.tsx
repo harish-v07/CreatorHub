@@ -216,34 +216,20 @@ export default function MyOrders() {
                                         )}
 
                                         {order.products?.type === "digital" && (
-                                            <div className="bg-muted/30 rounded-lg p-3 space-y-3">
+                                            <div className="bg-muted/30 rounded-lg p-3 space-y-3 mt-4 border border-dashed border-primary/20">
                                                 <div className="flex items-center justify-between gap-4">
                                                     <div className="flex items-center gap-2">
                                                         <Package className="h-4 w-4 text-primary flex-shrink-0" />
-                                                        <p className="text-sm font-medium">Digital Product</p>
+                                                        <p className="text-sm font-medium">Digital Product Access</p>
                                                     </div>
-                                                    {order.products.file_url ? (
-                                                        <Button
-                                                            size="sm"
-                                                            className="gap-2 flex-shrink-0"
-                                                            onClick={() => window.open(order.products!.file_url, "_blank")}
-                                                        >
-                                                            <Download className="h-3 w-3" />
-                                                            Download File
-                                                        </Button>
-                                                    ) : (
-                                                        <span className="text-xs text-muted-foreground">No file provided</span>
-                                                    )}
+                                                    <Button
+                                                        size="sm"
+                                                        className="gap-2 flex-shrink-0 bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
+                                                        onClick={() => navigate(`/digital-product/${order.product_id}`)}
+                                                    >
+                                                        Access Product
+                                                    </Button>
                                                 </div>
-                                                {order.products.usage_instructions && (
-                                                    <div className="text-sm border-t pt-3 mt-1">
-                                                        <p className="font-semibold mb-1">How to use:</p>
-                                                        <p className="text-muted-foreground whitespace-pre-wrap">{order.products.usage_instructions}</p>
-                                                    </div>
-                                                )}
-                                                {!order.products.usage_instructions && !order.products.file_url && (
-                                                    <p className="text-xs text-muted-foreground italic">Digital product – no shipping required.</p>
-                                                )}
                                             </div>
                                         )}
                                     </CardContent>

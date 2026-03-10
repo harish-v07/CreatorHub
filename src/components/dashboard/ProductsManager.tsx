@@ -193,10 +193,13 @@ export default function ProductsManager({
       });
 
       if (!validation.success) {
+        console.error("ZOD VALIDATION FAILED!", validation.error.format());
         toast.error(validation.error.issues[0].message);
         setUploading(false);
         return;
       }
+      
+      console.log("FINAL VALIDATED DATA TO SAVE:", validation.data);
 
       const {
         data: { user },
@@ -410,9 +413,10 @@ export default function ProductsManager({
                   </h3>
 
                   <div className="space-y-2">
-                    <Label>Product File (.zip)</Label>
+                    <Label htmlFor="product-file">Product File (.zip)</Label>
                     <div className="flex items-center gap-4">
                       <Input
+                        id="product-file"
                         type="file"
                         accept=".zip,.rar,.7z"
                         className="flex-1 cursor-pointer"

@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { ChevronLeft, ChevronRight, ShoppingCart, MapPin, CreditCard } from "lucide-react";
 import { useCart } from "@/hooks/useCart";
+import { S3Media } from "@/components/S3Media";
 
 export default function ProductDetail() {
     const { productId } = useParams();
@@ -38,7 +39,7 @@ export default function ProductDetail() {
     const fetchProduct = async () => {
         const { data, error } = await supabase
             .from("products")
-            .select("*, profiles(name, avatar_url)")
+            .select("*, public_profiles:creator_id(name, avatar_url)")
             .eq("id", productId)
             .single();
 
@@ -294,7 +295,7 @@ export default function ProductDetail() {
                                                     controls
                                                 />
                                             ) : (
-                                                <img
+                                                <S3Media
                                                     src={currentMedia}
                                                     alt={product.name}
                                                     className="w-full h-full object-contain"
@@ -353,7 +354,7 @@ export default function ProductDetail() {
                                             {isThumbVideo ? (
                                                 <video src={url} className="w-full h-full object-cover" />
                                             ) : (
-                                                <img src={url} alt={`${product.name} ${index + 1}`} className="w-full h-full object-cover" />
+                                                <S3Media src={url} alt={`${product.name} ${index + 1}`} className="w-full h-full object-cover" />
                                             )}
                                         </button>
                                     );
@@ -402,19 +403,19 @@ export default function ProductDetail() {
                             </Button>
                         </div>
 
-                        {product.profiles && (
+                        {product.public_profiles && (
                             <Card className="shadow-soft">
                                 <CardContent className="p-4">
                                     <p className="text-sm text-muted-foreground mb-2">Sold by</p>
                                     <div className="flex items-center gap-3">
-                                        {product.profiles.avatar_url && (
-                                            <img
-                                                src={product.profiles.avatar_url}
-                                                alt={product.profiles.name}
+                                        {product.public_profiles.avatar_url && (
+                                            <S3Media
+                                                src={product.public_profiles.avatar_url}
+                                                alt={product.public_profiles.name}
                                                 className="w-10 h-10 rounded-full"
                                             />
                                         )}
-                                        <p className="font-semibold">{product.profiles.name}</p>
+                                        <p className="font-semibold">{product.public_profiles.name}</p>
                                     </div>
                                 </CardContent>
                             </Card>
@@ -441,7 +442,7 @@ export default function ProductDetail() {
                                 </h3>
                                 <div className="flex gap-4">
                                     {product?.media_urls?.[0] && (
-                                        <img
+                                        <S3Media
                                             src={product.media_urls[0]}
                                             alt={product.name}
                                             className="w-20 h-20 object-cover rounded"

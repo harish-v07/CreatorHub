@@ -84,7 +84,6 @@ export const productSchema = z.object({
   media_urls: z.array(z.string().url()).optional().default([]),
   file_url: z.string()
     .trim()
-    .url('Invalid file URL format')
     .optional()
     .or(z.literal('')),
   usage_instructions: z.string()
