@@ -7,9 +7,9 @@
   </defs>
   <!-- Dark background -->
   <rect width="64" height="64" rx="12" fill="#0f0720"/>
-  <!-- Bold "C" letter -->
-  <text x="32" y="46" font-family="'Arial Black', Arial, sans-serif" font-size="46" font-weight="900"
-        text-anchor="middle" fill="url(#grad)">C</text>
-  <!-- Spark dot inside the C -->
-  <circle cx="42" cy="26" r="4" fill="#2dd4bf" opacity="0.9"/>
+  <!-- Bold "M" letter for Manch360 -->
+  <text x="32" y="46" font-family="'Arial Black', Arial, sans-serif" font-size="42" font-weight="900"
+        text-anchor="middle" fill="url(#grad)">M</text>
+  <!-- Brand accent dot -->
+  <circle cx="48" cy="20" r="5" fill="#2dd4bf" opacity="0.9"/>
 </svg>
