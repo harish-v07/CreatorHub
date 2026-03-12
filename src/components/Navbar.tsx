@@ -12,15 +12,30 @@ export const Navbar = () => {
   const [session, setSession] = useState<Session | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
 
+  const [isRecoverySession, setIsRecoverySession] = useState(false);
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
+      // Check if this is a password recovery session via URL hash
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      if (hashParams.get("type") === "recovery") {
+        setIsRecoverySession(true);
+        return;
+      }
       setSession(session);
       if (session) checkAdminRole(session.user.id);
     });
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "PASSWORD_RECOVERY") {
+        // Treat recovery sessions as logged-out in the navbar
+        setIsRecoverySession(true);
+        setSession(null);
+        return;
+      }
+      setIsRecoverySession(false);
       setSession(session);
       if (session) {
         checkAdminRole(session.user.id);
